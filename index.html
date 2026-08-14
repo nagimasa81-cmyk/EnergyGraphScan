@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Energy Scan" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Energy Graph Scan iPhone</title>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Energy Graph Scan</h1>
+      <div class="sub">iPhone v1.4.0</div>
+    </div>
+    <button id="resetBtn" class="ghost">Reset</button>
+  </header>
+
+  <main>
+    <section class="capture-card">
+      <div class="mode-row">
+        <label>Analysis
+          <select id="modeSelect">
+            <option value="Auto">Auto</option>
+            <option value="Gain">Gain</option>
+            <option value="Noise">Noise</option>
+          </select>
+        </label>
+        <label class="toggle"><input id="guideToggle" type="checkbox" checked> Guide frame</label>
+      </div>
+      <div class="button-row">
+        <label class="primary file-button">写真を撮る<input id="cameraInput" type="file" accept="image/*" capture="environment"></label>
+        <label class="secondary file-button">写真を選ぶ<input id="photoInput" type="file" accept="image/*"></label>
+      </div>
+      <div class="hint">画面全体を撮影し、Energy per BandグラフとChannel欄が入るようにしてください。</div>
+    </section>
+
+    <section class="viewer-card">
+      <div id="stage" class="stage empty">
+        <canvas id="canvas"></canvas>
+        <div id="guide" class="guide">
+          <span>Energy per Band をこの付近に</span>
+        </div>
+        <div id="roi" class="roi hidden"><div class="roi-label">ROI</div></div>
+        <div id="placeholder">写真を撮る / 選ぶ</div>
+      </div>
+      <div class="button-row">
+        <button id="autoDetectBtn" class="secondary" disabled>Auto ROI</button>
+        <button id="manualBtn" class="secondary" disabled>ROI調整</button>
+        <button id="analyzeBtn" class="primary" disabled>Analyze</button>
+      </div>
+      <div id="status" class="status">Ready</div>
+    </section>
+
+    <section id="resultCard" class="result-card hidden">
+      <div class="result-top">
+        <div><span class="label">Mode</span><strong id="modeOut">—</strong></div>
+        <div><span class="label">Channel</span><strong id="channelOut">—</strong></div>
+        <div><span class="label">Confidence</span><strong id="confidenceOut">—</strong></div>
+      </div>
+      <div class="values">
+        <div><span>Low</span><strong id="lowOut">—</strong></div>
+        <div><span>High</span><strong id="highOut">—</strong></div>
+        <div><span>Spec</span><strong id="specOut">—</strong></div>
+      </div>
+      <div id="messageOut" class="message"></div>
+    </section>
+
+    <section class="help-card">
+      <details>
+        <summary>判定仕様</summary>
+        <p>Low = Sample#0–270、High = Sample#270以降。Gainは小数2桁、Noiseは小数4桁。Channel未検出はUnknown、複数検出は候補を表示して解析を継続します。</p>
+      </details>
+    </section>
+  </main>
+
+  <script src="core.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
