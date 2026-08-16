@@ -1,0 +1,218 @@
+name: Deploy Spectrum Reader ZIP to Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Module/spectrumreader/*_UPLOAD.zip'
+      - '.github/workflows/deploy-spectrumreader-zip-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ------------------------------------------------------------
+      # Find the newest committed upload ZIP inside:
+      #   Module/spectrumreader/
+      #
+      # Example:
+      #   Module_spectrumreader_v6.4.0_UPLOAD.zip
+      #
+      # Old extracted files in Module/spectrumreader are NOT used.
+      # ------------------------------------------------------------
+      - name: Find latest Spectrum Reader ZIP
+        id: latest_zip
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SEARCH_DIR="Module/spectrumreader"
+          best_file=""
+          best_time=0
+
+          while IFS= read -r -d '' file; do
+            commit_time="$(git log -1 --format=%ct -- "$file" || true)"
+            commit_time="${commit_time:-0}"
+
+            if [ "$commit_time" -gt "$best_time" ]; then
+              best_time="$commit_time"
+              best_file="$file"
+            fi
+          done < <(
+            find "$SEARCH_DIR" -maxdepth 1 -type f \
+              -name '*_UPLOAD.zip' \
+              -print0
+          )
+
+          if [ -z "$best_file" ]; then
+            echo "::error::No *_UPLOAD.zip found in $SEARCH_DIR"
+            exit 1
+          fi
+
+          echo "Selected ZIP: $best_file"
+          echo "zip=$best_file" >> "$GITHUB_OUTPUT"
+
+      # ------------------------------------------------------------
+      # Build a clean Pages tree.
+      #
+      # The Spectrum Reader ZIP is authoritative.
+      # Existing repository files under Module/spectrumreader are ignored.
+      # ------------------------------------------------------------
+      - name: Extract Spectrum Reader
+        shell: bash
+        env:
+          SOURCE_ZIP: ${{ steps.latest_zip.outputs.zip }}
+        run: |
+          set -euo pipefail
+
+          rm -rf _site
+          mkdir -p _site/Module/spectrumreader
+
+          unzip -q "$SOURCE_ZIP" -d _site/Module/spectrumreader
+
+          # Support a ZIP that accidentally contains one wrapper directory.
+          if [ ! -f _site/Module/spectrumreader/index.html ]; then
+            mapfile -t indexes < <(
+              find _site/Module/spectrumreader \
+                -mindepth 2 -maxdepth 2 \
+                -type f -name index.html
+            )
+
+            if [ "${#indexes[@]}" -eq 1 ]; then
+              wrapper="$(dirname "${indexes[0]}")"
+              tmp="$(mktemp -d)"
+
+              cp -a "$wrapper"/. "$tmp"/
+              rm -rf _site/Module/spectrumreader
+              mkdir -p _site/Module/spectrumreader
+              cp -a "$tmp"/. _site/Module/spectrumreader/
+              rm -rf "$tmp"
+            fi
+          fi
+
+          printf 'Deployed Spectrum Reader from %s\n' "$SOURCE_ZIP" \
+            > _site/Module/spectrumreader/DEPLOYED_FROM.txt
+
+      # ------------------------------------------------------------
+      # Verify the extracted runtime before deployment.
+      # A bad ZIP must FAIL here instead of giving a successful 404/old build.
+      # ------------------------------------------------------------
+      - name: Verify Spectrum Reader runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP="_site/Module/spectrumreader"
+
+          required=(
+            "$APP/index.html"
+            "$APP/app.js"
+            "$APP/styles.css"
+            "$APP/sw.js"
+            "$APP/manifest.webmanifest"
+            "$APP/version.json"
+            "$APP/core.js"
+            "$APP/analysis_core_v2.js"
+            "$APP/robust_core_v3.js"
+            "$APP/canonical_registration_v4.js"
+          )
+
+          for file in "${required[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Missing required file after ZIP extraction: $file"
+              exit 1
+            fi
+          done
+
+          echo "Runtime files verified."
+
+          echo
+          echo "version.json:"
+          cat "$APP/version.json"
+
+          echo
+          echo "Version shown by index.html:"
+          grep -oE 'iPhone v[0-9]+\.[0-9]+\.[0-9]+' "$APP/index.html" \
+            | head -n 1 || true
+
+          echo
+          echo "Deployed file list:"
+          find "$APP" -maxdepth 2 -type f | sort
+
+      # ------------------------------------------------------------
+      # Root landing page.
+      # Visiting /EnergyGraphScan/ redirects to the deployed module.
+      # ------------------------------------------------------------
+      - name: Create root redirect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > _site/index.html <<'EOF'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <meta http-equiv="refresh" content="0; url=./Module/spectrumreader/">
+            <title>EnergyGraphScan</title>
+          </head>
+          <body>
+            <p>
+              <a href="./Module/spectrumreader/">
+                Open Spectrum Reader
+              </a>
+            </p>
+          </body>
+          </html>
+          EOF
+
+      # ------------------------------------------------------------
+      # Final artifact verification.
+      # ------------------------------------------------------------
+      - name: Verify Pages tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f _site/index.html
+          test -f _site/Module/spectrumreader/index.html
+          test -f _site/Module/spectrumreader/sw.js
+          test -f _site/Module/spectrumreader/manifest.webmanifest
+
+          echo "Pages tree ready:"
+          du -ah _site | sort -h | tail -n 40
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
