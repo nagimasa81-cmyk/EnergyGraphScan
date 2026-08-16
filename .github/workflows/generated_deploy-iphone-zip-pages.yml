@@ -1,0 +1,181 @@
+name: Deploy latest EnergyGraphScan iPhone ZIP to Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find latest source ZIP
+        id: latest_zip
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          best_file=""
+          best_time=0
+
+          while IFS= read -r -d '' file; do
+            commit_time="$(git log -1 --format=%ct -- "$file" || true)"
+            commit_time="${commit_time:-0}"
+
+            if [ "$commit_time" -gt "$best_time" ]; then
+              best_time="$commit_time"
+              best_file="$file"
+            fi
+          done < <(
+            find . -maxdepth 1 -type f \
+              -name 'EnergyGraphScan_iPhone_*_SOURCE.zip' \
+              -print0
+          )
+
+          if [ -z "$best_file" ]; then
+            echo "::error::No EnergyGraphScan_iPhone_*_SOURCE.zip found at repository root."
+            exit 1
+          fi
+
+          best_file="${best_file#./}"
+
+          echo "Selected source ZIP: $best_file"
+          echo "zip=$best_file" >> "$GITHUB_OUTPUT"
+
+      - name: Extract site
+        shell: bash
+        env:
+          SOURCE_ZIP: ${{ steps.latest_zip.outputs.zip }}
+        run: |
+          set -euo pipefail
+
+          rm -rf _site
+          mkdir -p _site
+
+          unzip -q "$SOURCE_ZIP" -d _site
+
+          if [ ! -f _site/index.html ]; then
+            mapfile -t indexes < <(
+              find _site -mindepth 2 -maxdepth 2 \
+                -type f -name index.html
+            )
+
+            if [ "${#indexes[@]}" -eq 1 ]; then
+              wrapper="$(dirname "${indexes[0]}")"
+              tmp="$(mktemp -d)"
+
+              cp -a "$wrapper"/. "$tmp"/
+              rm -rf _site
+              mkdir -p _site
+              cp -a "$tmp"/. _site/
+              rm -rf "$tmp"
+            fi
+          fi
+
+          test -f _site/index.html || {
+            echo "::error::index.html was not found after extracting $SOURCE_ZIP"
+            find _site -maxdepth 3 -type f | sort || true
+            exit 1
+          }
+
+          rm -rf _site/.github
+
+          printf 'Deployed root site from %s\n' "$SOURCE_ZIP" \
+            > _site/DEPLOYED_FROM.txt
+
+          echo "Root site extracted successfully."
+
+      - name: Add Spectrum Reader module
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MODULE_SRC="Module/spectrumreader"
+          MODULE_DST="_site/Module/spectrumreader"
+
+          test -f "$MODULE_SRC/index.html" || {
+            echo "::error::$MODULE_SRC/index.html does not exist."
+            exit 1
+          }
+
+          test -f "$MODULE_SRC/app.js" || {
+            echo "::error::$MODULE_SRC/app.js does not exist."
+            exit 1
+          }
+
+          test -f "$MODULE_SRC/sw.js" || {
+            echo "::error::$MODULE_SRC/sw.js does not exist."
+            exit 1
+          }
+
+          test -f "$MODULE_SRC/manifest.webmanifest" || {
+            echo "::error::$MODULE_SRC/manifest.webmanifest does not exist."
+            exit 1
+          }
+
+          rm -rf "$MODULE_DST"
+          mkdir -p "$MODULE_DST"
+          cp -a "$MODULE_SRC"/. "$MODULE_DST"/
+
+          echo "Spectrum Reader module copied to Pages tree."
+          find "$MODULE_DST" -maxdepth 2 -type f | sort
+
+      - name: Verify Pages tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            "_site/index.html"
+            "_site/Module/spectrumreader/index.html"
+            "_site/Module/spectrumreader/app.js"
+            "_site/Module/spectrumreader/styles.css"
+            "_site/Module/spectrumreader/sw.js"
+            "_site/Module/spectrumreader/manifest.webmanifest"
+            "_site/Module/spectrumreader/core.js"
+            "_site/Module/spectrumreader/analysis_core_v2.js"
+            "_site/Module/spectrumreader/robust_core_v3.js"
+            "_site/Module/spectrumreader/canonical_registration_v4.js"
+          )
+
+          for file in "${required[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Required Pages file is missing: $file"
+              exit 1
+            fi
+          done
+
+          echo "All required Pages files are present."
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
