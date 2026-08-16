@@ -1,0 +1,144 @@
+name: Build LocAcc PWA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Module/LocAcc/**'
+      - '.github/workflows/build_locacc.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest LocAcc source ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t zips < <(
+            find Module/LocAcc -maxdepth 1 -type f -iname 'LocAcc*_SOURCE.zip' -print0 \
+              | sort -zV \
+              | xargs -0 -r -n1 printf '%s\n'
+          )
+
+          if [ "${#zips[@]}" -eq 0 ]; then
+            echo "::error::No Module/LocAcc/LocAcc*_SOURCE.zip found."
+            exit 1
+          fi
+
+          ZIP="${zips[${#zips[@]}-1]}"
+          echo "Using: $ZIP"
+
+          rm -rf _site
+          mkdir -p _site/Module/LocAcc
+          unzip -q "$ZIP" -d _site/Module/LocAcc
+
+          # Allow one accidental wrapper directory, but always publish
+          # the application at /Module/LocAcc/.
+          if [ ! -f _site/Module/LocAcc/index.html ]; then
+            ROOT="$(
+              find _site/Module/LocAcc \
+                -mindepth 2 -maxdepth 3 \
+                -type f -name index.html \
+                -printf '%h\n' | head -1
+            )"
+            if [ -n "${ROOT:-}" ]; then
+              cp -a "$ROOT"/. _site/Module/LocAcc/
+            fi
+          fi
+
+          required=(
+            index.html
+            app.js
+            analysis-core.js
+            styles.css
+            manifest.webmanifest
+            sw.js
+            version.json
+          )
+
+          for f in "${required[@]}"; do
+            if [ ! -f "_site/Module/LocAcc/$f" ]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
+          done
+
+          touch _site/.nojekyll
+
+          echo "Published files:"
+          find _site/Module/LocAcc -maxdepth 2 -type f | sort
+
+      - name: Validate relative PWA paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ROOT="_site/Module/LocAcc"
+
+          # Manifest must be referenced relatively so the app works at
+          # /<repo>/Module/LocAcc/ on GitHub Pages.
+          if ! grep -Eq 'rel=["'\'']manifest["'\''][^>]*href=["'\'']\./manifest\.webmanifest["'\'']|href=["'\'']\./manifest\.webmanifest["'\''][^>]*rel=["'\'']manifest["'\'']' "$ROOT/index.html"; then
+            echo "::error::index.html does not reference ./manifest.webmanifest"
+            exit 1
+          fi
+
+          # Accept additional Service Worker registration options, e.g.
+          # register('./sw.js',{updateViaCache:'none'}).
+          if ! grep -Eq "serviceWorker\.register\([[:space:]]*['\"]\./sw\.js['\"]" "$ROOT/app.js"; then
+            echo "::error::app.js does not register ./sw.js"
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("_site/Module/LocAcc")
+          manifest = json.loads((root / "manifest.webmanifest").read_text(encoding="utf-8"))
+
+          if manifest.get("start_url") != "./":
+              raise SystemExit("::error::manifest start_url must be './'")
+          if manifest.get("scope") != "./":
+              raise SystemExit("::error::manifest scope must be './'")
+
+          version = json.loads((root / "version.json").read_text(encoding="utf-8"))
+          if not version:
+              raise SystemExit("::error::version.json is empty")
+
+          print("PWA relative path validation: PASS")
+          PY
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}Module/LocAcc/
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
