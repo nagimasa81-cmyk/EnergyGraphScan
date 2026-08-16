@@ -1,0 +1,322 @@
+name: Deploy latest EnergyGraphScan iPhone ZIP to Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'EnergyGraphScan_iPhone_*_SOURCE.zip'
+      - 'Module/spectrumreader/**'
+      - 'Module/LocAcc/**'
+      - '.github/workflows/deploy-iphone-zip-pages.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find latest source ZIP
+        id: latest_zip
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          best_file=""
+          best_time=0
+
+          while IFS= read -r -d '' file; do
+            commit_time="$(git log -1 --format=%ct -- "$file" || true)"
+            commit_time="${commit_time:-0}"
+
+            if [ "$commit_time" -gt "$best_time" ]; then
+              best_time="$commit_time"
+              best_file="$file"
+            fi
+          done < <(
+            find . -maxdepth 1 -type f \
+              -name 'EnergyGraphScan_iPhone_*_SOURCE.zip' \
+              -print0
+          )
+
+          if [ -z "$best_file" ]; then
+            echo "::error::No EnergyGraphScan_iPhone_*_SOURCE.zip found at repository root."
+            exit 1
+          fi
+
+          best_file="${best_file#./}"
+
+          echo "Selected source ZIP: $best_file"
+          echo "zip=$best_file" >> "$GITHUB_OUTPUT"
+
+      - name: Extract site
+        shell: bash
+        env:
+          SOURCE_ZIP: ${{ steps.latest_zip.outputs.zip }}
+        run: |
+          set -euo pipefail
+
+          rm -rf _site
+          mkdir -p _site
+
+          unzip -q "$SOURCE_ZIP" -d _site
+
+          if [ ! -f _site/index.html ]; then
+            mapfile -t indexes < <(
+              find _site -mindepth 2 -maxdepth 2 \
+                -type f -name index.html
+            )
+
+            if [ "${#indexes[@]}" -eq 1 ]; then
+              wrapper="$(dirname "${indexes[0]}")"
+              tmp="$(mktemp -d)"
+
+              cp -a "$wrapper"/. "$tmp"/
+              rm -rf _site
+              mkdir -p _site
+              cp -a "$tmp"/. _site/
+              rm -rf "$tmp"
+            fi
+          fi
+
+          test -f _site/index.html || {
+            echo "::error::index.html was not found after extracting $SOURCE_ZIP"
+            find _site -maxdepth 3 -type f | sort || true
+            exit 1
+          }
+
+          rm -rf _site/.github
+
+          printf 'Deployed root site from %s\n' "$SOURCE_ZIP" \
+            > _site/DEPLOYED_FROM.txt
+
+          echo "Root site extracted successfully."
+
+      - name: Add Spectrum Reader module
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MODULE_SRC="Module/spectrumreader"
+          MODULE_DST="_site/Module/spectrumreader"
+
+          test -f "$MODULE_SRC/index.html" || {
+            echo "::error::$MODULE_SRC/index.html does not exist."
+            exit 1
+          }
+
+          test -f "$MODULE_SRC/app.js" || {
+            echo "::error::$MODULE_SRC/app.js does not exist."
+            exit 1
+          }
+
+          test -f "$MODULE_SRC/sw.js" || {
+            echo "::error::$MODULE_SRC/sw.js does not exist."
+            exit 1
+          }
+
+          test -f "$MODULE_SRC/manifest.webmanifest" || {
+            echo "::error::$MODULE_SRC/manifest.webmanifest does not exist."
+            exit 1
+          }
+
+          rm -rf "$MODULE_DST"
+          mkdir -p "$MODULE_DST"
+          cp -a "$MODULE_SRC"/. "$MODULE_DST"/
+
+          echo "Spectrum Reader module copied to Pages tree."
+          find "$MODULE_DST" -maxdepth 2 -type f | sort
+
+      - name: Add LocAcc module
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import re
+          import zipfile
+          from pathlib import Path
+
+          root = Path("Module/LocAcc")
+          zips = list(root.glob("LocAcc*_SOURCE.zip"))
+          if not zips:
+              raise SystemExit("::error::No Module/LocAcc/LocAcc*_SOURCE.zip found.")
+
+          semver = re.compile(r"^\s*v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?\s*$")
+          candidates = []
+
+          for z in zips:
+              try:
+                  with zipfile.ZipFile(z) as arc:
+                      names = [n for n in arc.namelist()
+                               if n.rstrip("/").endswith("version.json") and not n.endswith("/")]
+                      if not names:
+                          print(f"SKIP {z}: version.json missing")
+                          continue
+
+                      names.sort(key=lambda n: (n.count("/"), len(n), n))
+                      vn = names[0]
+                      data = json.loads(arc.read(vn).decode("utf-8-sig"))
+                      value = data.get("version") if isinstance(data, dict) else data
+                      if not isinstance(value, str):
+                          print(f"SKIP {z}: invalid version.json")
+                          continue
+
+                      m = semver.match(value)
+                      if not m:
+                          print(f"SKIP {z}: unsupported version {value}")
+                          continue
+
+                      prefix = vn[:-len("version.json")]
+                      if prefix + "index.html" not in arc.namelist():
+                          print(f"SKIP {z}: index.html missing beside version.json")
+                          continue
+
+                      key = tuple(map(int, m.group(1,2,3)))
+                      candidates.append((key, value.lstrip("v"), z, prefix))
+                      print(f"CANDIDATE {z}: {value}")
+
+              except Exception as exc:
+                  print(f"SKIP {z}: {exc}")
+
+          if not candidates:
+              raise SystemExit("::error::No valid LocAcc SOURCE ZIP found.")
+
+          candidates.sort(key=lambda x: x[0])
+          _, version, z, prefix = candidates[-1]
+
+          Path("/tmp/locacc_zip").write_text(str(z), encoding="utf-8")
+          Path("/tmp/locacc_version").write_text(version, encoding="utf-8")
+          Path("/tmp/locacc_prefix").write_text(prefix, encoding="utf-8")
+
+          print("============================================")
+          print(f"LocAcc selected ZIP: {z}")
+          print(f"LocAcc selected version: {version}")
+          print("============================================")
+          PY
+
+          LOCACC_ZIP="$(cat /tmp/locacc_zip)"
+          LOCACC_VERSION="$(cat /tmp/locacc_version)"
+          LOCACC_PREFIX="$(cat /tmp/locacc_prefix)"
+
+          rm -rf _locacc_extract _site/Module/LocAcc
+          mkdir -p _locacc_extract _site/Module/LocAcc
+          unzip -q "$LOCACC_ZIP" -d _locacc_extract
+
+          if [ -n "$LOCACC_PREFIX" ]; then
+            LOCACC_SRC="_locacc_extract/${LOCACC_PREFIX%/}"
+          else
+            LOCACC_SRC="_locacc_extract"
+          fi
+
+          cp -a "$LOCACC_SRC"/. _site/Module/LocAcc/
+
+          required=(
+            index.html
+            app.js
+            analysis-core.js
+            styles.css
+            sw.js
+            manifest.webmanifest
+            version.json
+          )
+
+          for f in "${required[@]}"; do
+            test -f "_site/Module/LocAcc/$f" || {
+              echo "::error::LocAcc published file missing: $f"
+              exit 1
+            }
+          done
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("_site/Module/LocAcc")
+          version = json.loads((root / "version.json").read_text(encoding="utf-8-sig"))
+          manifest = json.loads((root / "manifest.webmanifest").read_text(encoding="utf-8-sig"))
+
+          actual = version.get("version") if isinstance(version, dict) else version
+          expected = Path("/tmp/locacc_version").read_text(encoding="utf-8").strip()
+
+          if actual != expected:
+              raise SystemExit(f"::error::LocAcc version mismatch: {actual} != {expected}")
+          if manifest.get("start_url") != "./":
+              raise SystemExit("::error::LocAcc manifest start_url must be './'")
+          if manifest.get("scope") != "./":
+              raise SystemExit("::error::LocAcc manifest scope must be './'")
+
+          print(f"LocAcc publish verification PASS: {actual}")
+          PY
+
+          printf 'LocAcc %s from %s\n' "$LOCACC_VERSION" "$LOCACC_ZIP" \
+            > _site/Module/LocAcc/DEPLOYED_FROM.txt
+
+          echo "LocAcc module copied to Pages tree."
+          find _site/Module/LocAcc -maxdepth 2 -type f | sort
+
+      - name: Verify Pages tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            "_site/index.html"
+            "_site/Module/spectrumreader/index.html"
+            "_site/Module/spectrumreader/app.js"
+            "_site/Module/spectrumreader/styles.css"
+            "_site/Module/spectrumreader/sw.js"
+            "_site/Module/spectrumreader/manifest.webmanifest"
+            "_site/Module/spectrumreader/core.js"
+            "_site/Module/spectrumreader/analysis_core_v2.js"
+            "_site/Module/spectrumreader/robust_core_v3.js"
+            "_site/Module/spectrumreader/canonical_registration_v4.js"
+            "_site/Module/LocAcc/index.html"
+            "_site/Module/LocAcc/app.js"
+            "_site/Module/LocAcc/analysis-core.js"
+            "_site/Module/LocAcc/styles.css"
+            "_site/Module/LocAcc/sw.js"
+            "_site/Module/LocAcc/manifest.webmanifest"
+            "_site/Module/LocAcc/version.json"
+          )
+
+          for file in "${required[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Required Pages file is missing: $file"
+              exit 1
+            fi
+          done
+
+          echo "All required Pages files are present."
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
