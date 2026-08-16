@@ -1,0 +1,82 @@
+name: Build LocAcc PWA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Module/LocAcc/**'
+      - '.github/workflows/build_locacc.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest LocAcc source ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t zips < <(find Module/LocAcc -maxdepth 1 -type f -iname 'LocAcc*_SOURCE.zip' -print0 | sort -zV | xargs -0 -r -n1 printf '%s\n')
+          if [ ${#zips[@]} -eq 0 ]; then
+            echo 'No Module/LocAcc/LocAcc*_SOURCE.zip found.' >&2
+            exit 1
+          fi
+
+          ZIP="${zips[${#zips[@]}-1]}"
+          echo "Using: $ZIP"
+
+          rm -rf _site
+          mkdir -p _site/Module/LocAcc
+          unzip -q "$ZIP" -d _site/Module/LocAcc
+
+          # Accept a ZIP with one accidental wrapper directory, but publish a clean URL.
+          if [ ! -f _site/Module/LocAcc/index.html ]; then
+            ROOT=$(find _site/Module/LocAcc -mindepth 2 -maxdepth 3 -type f -name index.html -printf '%h\n' | head -1)
+            if [ -n "${ROOT:-}" ]; then
+              cp -a "$ROOT"/. _site/Module/LocAcc/
+            fi
+          fi
+
+          test -f _site/Module/LocAcc/index.html
+          test -f _site/Module/LocAcc/manifest.webmanifest
+          test -f _site/Module/LocAcc/sw.js
+          touch _site/.nojekyll
+
+          echo 'Published path:'
+          find _site/Module/LocAcc -maxdepth 2 -type f | sort
+
+      - name: Validate relative PWA paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'href="./manifest.webmanifest"' _site/Module/LocAcc/index.html
+          grep -q "register('./sw.js')" _site/Module/LocAcc/app.js
+          grep -q '"start_url": "./"' _site/Module/LocAcc/manifest.webmanifest
+          grep -q '"scope": "./"' _site/Module/LocAcc/manifest.webmanifest
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}Module/LocAcc/
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
