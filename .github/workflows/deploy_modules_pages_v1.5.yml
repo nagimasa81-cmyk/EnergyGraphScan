@@ -1,0 +1,493 @@
+name: Deploy Module PWAs to Pages v1.5
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Module/spectrumreader/**'
+      - '.github/workflows/deploy_modules_pages_v1.5.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Spectrum Reader split package sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("Module/spectrumreader")
+          if not source.is_dir():
+              raise SystemExit("::error::Module/spectrumreader directory missing")
+          limit = 24 * 1024 * 1024
+          oversize = [
+              p for p in source.glob("*.zip.part*")
+              if p.is_file() and p.stat().st_size > limit
+          ]
+          if oversize:
+              for p in oversize:
+                  print(f"::error::Split part exceeds 24 MiB safety limit: {p} ({p.stat().st_size} bytes)")
+              raise SystemExit(1)
+          print("Spectrum Reader split-part size check: PASS")
+          PY
+
+      - name: Build Pages tree from newest module ZIPs or split ZIP parts
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site _module_extract _module_reconstructed
+          mkdir -p _site/Module _module_extract _module_reconstructed
+
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import re
+          import shutil
+          import zipfile
+          from pathlib import Path
+
+          SITE = Path("_site")
+          EXTRACT = Path("_module_extract")
+          RECONSTRUCTED = Path("_module_reconstructed")
+
+          modules = [
+              {
+                  "name": "Spectrum Reader",
+                  "source": Path("Module/spectrumreader"),
+                  "destination": SITE / "Module/spectrumreader",
+                  "required": [
+                      "index.html",
+                      "app.js",
+                      "app.css",
+                      "worker.js",
+                      "egs-v2-core.bundle.js",
+                      "sw.js",
+                      "manifest.webmanifest",
+                      "version.json",
+                  ],
+              },
+              {
+                  "name": "LocAcc",
+                  "source": Path("Module/LocAcc"),
+                  "destination": SITE / "Module/LocAcc",
+                  "required": [
+                      "index.html",
+                      "app.js",
+                      "analysis-core.js",
+                      "styles.css",
+                      "sw.js",
+                      "manifest.webmanifest",
+                      "version.json",
+                  ],
+              },
+          ]
+
+          semver_re = re.compile(
+              r"^\s*v?(\d+)\.(\d+)\.(\d+)"
+              r"(?:-([0-9A-Za-z.-]+))?"
+              r"(?:\+([0-9A-Za-z.-]+))?\s*$"
+          )
+          split_re = re.compile(r"^(?P<archive>.+\.zip)\.part(?P<number>\d+)$", re.I)
+
+          def sha256_file(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          def parse_version(value):
+              if isinstance(value, dict):
+                  # Prefer the branch-aware display version when available,
+                  # e.g. v2.0.7-r7, so r7 is newer than r6 even when the base
+                  # "version" field remains 2.0.7.
+                  value = (
+                      value.get("display_version")
+                      or value.get("appVersion")
+                      or value.get("app_version")
+                      or value.get("version")
+                  )
+              if not isinstance(value, str):
+                  return None
+              match = semver_re.match(value)
+              if not match:
+                  return None
+              major, minor, patch = map(int, match.group(1, 2, 3))
+              prerelease = match.group(4)
+              stable_rank = 1 if prerelease is None else 0
+              return (
+                  (major, minor, patch, stable_rank, prerelease or ""),
+                  value.strip().lstrip("v"),
+              )
+
+          def find_app_root(archive):
+              names = [name for name in archive.namelist() if not name.endswith("/")]
+              version_files = [name for name in names if name.endswith("version.json")]
+              version_files.sort(key=lambda name: (name.count("/"), len(name), name))
+              for version_name in version_files:
+                  prefix = version_name[:-len("version.json")]
+                  if prefix + "index.html" in names:
+                      return prefix, version_name
+              return None, None
+
+          def reconstruct_split_archives(source_dir):
+              groups = {}
+              for part in source_dir.iterdir():
+                  if not part.is_file():
+                      continue
+                  match = split_re.match(part.name)
+                  if not match:
+                      continue
+                  archive_name = match.group("archive")
+                  number = int(match.group("number"))
+                  groups.setdefault(archive_name, []).append((number, part))
+
+              reconstructed = []
+              target_dir = RECONSTRUCTED / source_dir.name
+              target_dir.mkdir(parents=True, exist_ok=True)
+
+              for archive_name, numbered_parts in sorted(groups.items()):
+                  numbered_parts.sort(key=lambda item: item[0])
+                  numbers = [number for number, _ in numbered_parts]
+                  expected = list(range(1, len(numbers) + 1))
+                  if numbers != expected:
+                      raise SystemExit(
+                          f"::error::Split archive {archive_name} has missing/out-of-order "
+                          f"parts: got {numbers}, expected {expected}"
+                      )
+
+                  manifest_path = source_dir / f"{archive_name}.parts.json"
+                  if not manifest_path.is_file():
+                      raise SystemExit(
+                          f"::error::Split archive manifest missing: {manifest_path}"
+                      )
+                  manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+                  declared = [item["name"] for item in manifest.get("parts", [])]
+                  actual = [part.name for _, part in numbered_parts]
+                  if declared != actual:
+                      raise SystemExit(
+                          f"::error::{manifest_path} part list does not match repository files"
+                      )
+                  declared_hashes = {
+                      item["name"]: item.get("sha256")
+                      for item in manifest.get("parts", [])
+                  }
+                  for _, part in numbered_parts:
+                      expected_hash = declared_hashes.get(part.name)
+                      if not expected_hash:
+                          raise SystemExit(
+                              f"::error::SHA256 missing for split part {part.name}"
+                          )
+                      if sha256_file(part).lower() != expected_hash.lower():
+                          raise SystemExit(
+                              f"::error::SHA256 mismatch for split part {part}"
+                          )
+
+                  output = target_dir / archive_name
+                  with output.open("wb") as destination:
+                      for _, part in numbered_parts:
+                          with part.open("rb") as source:
+                              shutil.copyfileobj(source, destination, length=1024 * 1024)
+
+                  actual_hash = sha256_file(output)
+                  manifest_archive_hash = manifest.get("archive_sha256")
+                  if manifest_archive_hash and actual_hash.lower() != manifest_archive_hash.lower():
+                      raise SystemExit(
+                          f"::error::Reconstructed ZIP SHA256 mismatch vs parts manifest: "
+                          f"{actual_hash} != {manifest_archive_hash}"
+                      )
+
+                  sha_path = source_dir / f"{archive_name}.sha256"
+                  if sha_path.is_file():
+                      expected_hash = sha_path.read_text(encoding="utf-8-sig").split()[0]
+                      if actual_hash.lower() != expected_hash.lower():
+                          raise SystemExit(
+                              f"::error::Reconstructed ZIP SHA256 mismatch: "
+                              f"{actual_hash} != {expected_hash}"
+                          )
+
+                  try:
+                      with zipfile.ZipFile(output) as archive:
+                          bad_member = archive.testzip()
+                          if bad_member:
+                              raise RuntimeError(f"CRC failure in {bad_member}")
+                  except Exception as exc:
+                      raise SystemExit(
+                          f"::error::Reconstructed ZIP is invalid: {archive_name}: {exc}"
+                      )
+
+                  source_label = ", ".join(part.name for _, part in numbered_parts)
+                  print(f"RECONSTRUCTED {archive_name} from: {source_label}")
+                  reconstructed.append((output, f"split:{archive_name}"))
+
+              return reconstructed
+
+          deployed = []
+
+          for module in modules:
+              source_dir = module["source"]
+              if not source_dir.is_dir():
+                  raise SystemExit(
+                      f"::error::{module['name']} directory missing: {source_dir}"
+                  )
+
+              archive_sources = [
+                  (path, str(path))
+                  for path in sorted(source_dir.glob("*.zip"), key=lambda path: path.name.lower())
+                  if path.is_file()
+              ]
+              archive_sources.extend(reconstruct_split_archives(source_dir))
+
+              if not archive_sources:
+                  raise SystemExit(
+                      f"::error::No ZIP or split ZIP parts found under {source_dir}"
+                  )
+
+              candidates = []
+
+              for zip_path, source_label in archive_sources:
+                  try:
+                      with zipfile.ZipFile(zip_path) as archive:
+                          prefix, version_name = find_app_root(archive)
+                          if version_name is None:
+                              print(
+                                  f"SKIP {source_label}: "
+                                  "version.json/index.html pair missing"
+                              )
+                              continue
+
+                          raw_version = json.loads(
+                              archive.read(version_name).decode("utf-8-sig")
+                          )
+                          parsed = parse_version(raw_version)
+                          if parsed is None:
+                              print(
+                                  f"SKIP {source_label}: "
+                                  f"unsupported version.json {raw_version!r}"
+                              )
+                              continue
+
+                          sort_key, version = parsed
+                          archive_names = set(archive.namelist())
+                          missing = [
+                              filename
+                              for filename in module["required"]
+                              if prefix + filename not in archive_names
+                          ]
+                          if missing:
+                              print(
+                                  f"SKIP {source_label}: missing " + ", ".join(missing)
+                              )
+                              continue
+
+                          candidates.append(
+                              (sort_key, version, zip_path, prefix, source_label)
+                          )
+                          print(
+                              f"CANDIDATE {module['name']}: "
+                              f"{source_label} -> {version}"
+                          )
+                  except Exception as exc:
+                      print(f"SKIP {source_label}: {exc}")
+
+              if not candidates:
+                  raise SystemExit(
+                      f"::error::No valid {module['name']} ZIP found under {source_dir}"
+                  )
+
+              candidates.sort(key=lambda item: item[0])
+              _, version, selected_zip, prefix, source_label = candidates[-1]
+
+              print("")
+              print("============================================")
+              print(f"Module: {module['name']}")
+              print(f"Selected source: {source_label}")
+              print(f"Selected version: {version}")
+              print(f"ZIP app root: {prefix or './'}")
+              print("============================================")
+
+              extract_dir = EXTRACT / module["destination"].name
+              if extract_dir.exists():
+                  shutil.rmtree(extract_dir)
+              extract_dir.mkdir(parents=True)
+
+              with zipfile.ZipFile(selected_zip) as archive:
+                  archive.extractall(extract_dir)
+
+              source_root = extract_dir / prefix if prefix else extract_dir
+              destination = module["destination"]
+              if destination.exists():
+                  shutil.rmtree(destination)
+              destination.mkdir(parents=True)
+
+              for item in source_root.iterdir():
+                  target = destination / item.name
+                  if item.is_dir():
+                      shutil.copytree(item, target)
+                  else:
+                      shutil.copy2(item, target)
+
+              deployed_version_data = json.loads(
+                  (destination / "version.json").read_text(encoding="utf-8-sig")
+              )
+              deployed_version = parse_version(deployed_version_data)
+              if deployed_version is None:
+                  raise SystemExit(
+                      f"::error::{module['name']} deployed version unreadable"
+                  )
+
+              actual_version = deployed_version[1]
+              if actual_version != version:
+                  raise SystemExit(
+                      f"::error::{module['name']} version mismatch: "
+                      f"{actual_version} != {version}"
+                  )
+
+              manifest_path = destination / "manifest.webmanifest"
+              manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+              manifest["start_url"] = "./"
+              manifest["scope"] = "./"
+              manifest_path.write_text(
+                  json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+
+              verify_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+              if verify_manifest.get("start_url") != "./":
+                  raise SystemExit(
+                      f"::error::{module['name']} normalized manifest start_url is not './'"
+                  )
+              if verify_manifest.get("scope") != "./":
+                  raise SystemExit(
+                      f"::error::{module['name']} normalized manifest scope is not './'"
+                  )
+
+              marker = {
+                  "module": module["name"],
+                  "version": version,
+                  "source_zip": source_label,
+              }
+              (destination / "DEPLOYED_FROM.json").write_text(
+                  json.dumps(marker, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+              deployed.append(marker)
+
+          root_html = "\n".join(
+              [
+                  "<!doctype html>",
+                  '<html lang="en">',
+                  "<head>",
+                  '  <meta charset="utf-8">',
+                  '  <meta name="viewport" content="width=device-width,initial-scale=1">',
+                  "  <title>Module Apps</title>",
+                  "</head>",
+                  "<body>",
+                  "  <h1>Module Apps</h1>",
+                  "  <ul>",
+                  '    <li><a href="./Module/spectrumreader/">Spectrum Reader</a></li>',
+                  '    <li><a href="./Module/LocAcc/">LocAcc</a></li>',
+                  "  </ul>",
+                  "</body>",
+                  "</html>",
+                  "",
+              ]
+          )
+          (SITE / "index.html").write_text(root_html, encoding="utf-8")
+          (SITE / "DEPLOYED_MODULES.json").write_text(
+              json.dumps(deployed, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          print("")
+          print("Final deployed modules:")
+          print(json.dumps(deployed, indent=2))
+          PY
+
+          touch _site/.nojekyll
+
+      - name: Verify final Pages tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            "_site/index.html"
+
+            "_site/Module/spectrumreader/index.html"
+            "_site/Module/spectrumreader/app.js"
+            "_site/Module/spectrumreader/app.css"
+            "_site/Module/spectrumreader/worker.js"
+            "_site/Module/spectrumreader/egs-v2-core.bundle.js"
+            "_site/Module/spectrumreader/sw.js"
+            "_site/Module/spectrumreader/manifest.webmanifest"
+            "_site/Module/spectrumreader/version.json"
+
+            "_site/Module/LocAcc/index.html"
+            "_site/Module/LocAcc/app.js"
+            "_site/Module/LocAcc/analysis-core.js"
+            "_site/Module/LocAcc/styles.css"
+            "_site/Module/LocAcc/sw.js"
+            "_site/Module/LocAcc/manifest.webmanifest"
+            "_site/Module/LocAcc/version.json"
+          )
+
+          for file in "${required[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Required Pages file missing: $file"
+              exit 1
+            fi
+          done
+
+          echo "Final Pages tree:"
+          find _site -maxdepth 3 -type f | sort
+
+          echo ""
+          echo "Deployed module versions:"
+          cat _site/DEPLOYED_MODULES.json
+
+          echo "Pages tree verification: PASS"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Deployment URLs
+        shell: bash
+        run: |
+          echo "Pages root: ${{ steps.deployment.outputs.page_url }}"
+          echo "Spectrum Reader: ${{ steps.deployment.outputs.page_url }}Module/spectrumreader/"
+          echo "LocAcc: ${{ steps.deployment.outputs.page_url }}Module/LocAcc/"
