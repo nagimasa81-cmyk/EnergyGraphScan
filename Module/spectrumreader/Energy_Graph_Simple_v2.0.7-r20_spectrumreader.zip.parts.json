@@ -1,0 +1,29 @@
+{
+  "archive": "Energy_Graph_Simple_v2.0.7-r20_spectrumreader.zip",
+  "version": "v2.0.7-r20",
+  "part_size_bytes": 12582912,
+  "archive_size_bytes": 47839555,
+  "archive_sha256": "e73ec76d6c492981193a16b6cc6c92bf41c1ecd16919af94ab6b15a0f929290c",
+  "parts": [
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r20_spectrumreader.zip.part01",
+      "size": 12582912,
+      "sha256": "18417d142ba0bcd90b6a5309a698f83924e37bc0b149a4eedb4d7bde82f09987"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r20_spectrumreader.zip.part02",
+      "size": 12582912,
+      "sha256": "ccd1068623cd281e5b55063be284e9986cff1e019360cf28fdd46a603f43826d"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r20_spectrumreader.zip.part03",
+      "size": 12582912,
+      "sha256": "02cf2581fd0720b2f0ad2e5e61f55f5aa1a20a5d048013d78f39f409063bde9b"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r20_spectrumreader.zip.part04",
+      "size": 10090819,
+      "sha256": "51d20132366e56f23dfcadd7cf20821a379acd7987e353d4f4358c765455ad04"
+    }
+  ]
+}
