@@ -1,0 +1,50 @@
+{
+  "format": "split-zip-v1",
+  "archive": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip",
+  "version": "v2.0.7-r23",
+  "part_size_bytes": 12582912,
+  "archive_size_bytes": 92421036,
+  "archive_sha256": "cdadb748b8e2ffb6da9254a500a7fc84b2d010bdecc6bf4a7f4391965c985267",
+  "parts": [
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip.part01",
+      "size": 12582912,
+      "sha256": "2f2d4b93dc8be2cc1e6f36ae82d47b4f4f4a6642c2b8bf9cab27f197e4474d1e"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip.part02",
+      "size": 12582912,
+      "sha256": "d506c69c4b27e0b26bee418912691f08c55750fe3c5fcd93fbeedea5f237a1d1"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip.part03",
+      "size": 12582912,
+      "sha256": "efbccabad7c80d8bf9606a867f4b757a83ed34b1d95d2c9678d26770d197910a"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip.part04",
+      "size": 12582912,
+      "sha256": "19357248ae018a4682442841c00c321e0a8b661cfe75f483e5b02a1d237d3263"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip.part05",
+      "size": 12582912,
+      "sha256": "ec15243e45fcc2a03f267094d77ec727751d41f3d5114511ff7753b7f58dcd5b"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip.part06",
+      "size": 12582912,
+      "sha256": "4e858e2bf8e355f88e258762044f03e199ab371b5d21d85038ca2642b5ab12a2"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip.part07",
+      "size": 12582912,
+      "sha256": "8a13f753b7e34b606593ba3ce0b253d5e5872ccda1f01a48806f01d63fa8bf2d"
+    },
+    {
+      "name": "Energy_Graph_Simple_v2.0.7-r23_spectrumreader.zip.part08",
+      "size": 4340652,
+      "sha256": "4389a455b77f4fcdfe8121e9d5fd49bf0841d34433909dca0e641fa9aac4d00c"
+    }
+  ]
+}
