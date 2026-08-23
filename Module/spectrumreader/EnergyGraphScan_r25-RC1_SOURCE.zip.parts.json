@@ -1,0 +1,42 @@
+{
+  "format": "EnergyGraphScan split package manifest v1",
+  "version": "r25-RC1",
+  "source_zip": "EnergyGraphScan_r25-RC1_SOURCE.zip",
+  "source_size": 92435903,
+  "source_sha256": "a7dc12e679b985e5d2001436cee31c7d9f959983a2f6f3092790fcf35f8216a2",
+  "part_size_target_bytes": 20971520,
+  "part_count": 5,
+  "parts": [
+    {
+      "index": 1,
+      "file": "EnergyGraphScan_r25-RC1_SOURCE.zip.part001",
+      "size": 20971520,
+      "sha256": "54932e997c62629e5a603c0ff46b360a775966b2e44b56325c01a0d13ba7fbea"
+    },
+    {
+      "index": 2,
+      "file": "EnergyGraphScan_r25-RC1_SOURCE.zip.part002",
+      "size": 20971520,
+      "sha256": "e0cc957d20e3a0324e7fcc9300c49d32e3cb4b030bf8f587f540627a851798a7"
+    },
+    {
+      "index": 3,
+      "file": "EnergyGraphScan_r25-RC1_SOURCE.zip.part003",
+      "size": 20971520,
+      "sha256": "4a87998adfc62a5f8b97a9720fbe4a092ee453e64a2406532438f47c680e9f1a"
+    },
+    {
+      "index": 4,
+      "file": "EnergyGraphScan_r25-RC1_SOURCE.zip.part004",
+      "size": 20971520,
+      "sha256": "b04f3f2b3f93741a4de1593395a0a965523f4ccc8532194c5a46cf114936de1b"
+    },
+    {
+      "index": 5,
+      "file": "EnergyGraphScan_r25-RC1_SOURCE.zip.part005",
+      "size": 8549823,
+      "sha256": "1dbfe81cdd45c4d1c092194fb54125c7fd560776e588613492541032af6ab81c"
+    }
+  ],
+  "reassembly": "Concatenate only .part001, .part002, ... in ascending index order to reconstruct source_zip."
+}
