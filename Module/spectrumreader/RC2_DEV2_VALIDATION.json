@@ -1,0 +1,86 @@
+{
+  "version": "2.0.7-r25-RC2-dev2",
+  "runtime_fingerprint": "pipeline37-axis52-trace17-r25rc2-gainpop3-projection-rescue1",
+  "status": "validation_only_not_packaged",
+  "changes": [
+    "Worker transport removes non-cloneable axis.mapY before postMessage",
+    "Gain-scale High uses sustained elevated population inside fixed 270-500 analysis interval",
+    "Noise/decimal axes remain fixed-contract",
+    "Axis failure may retry independent projection geometry on same decoded pixels"
+  ],
+  "evidence_2026_08_24": {
+    "source_images": 14,
+    "accepted": 14,
+    "restored_regressions": [
+      "IMG_2417",
+      "IMG_2415",
+      "IMG_2406",
+      "IMG_2405"
+    ],
+    "gain_high_examples": {
+      "IMG_2422": 1.2814050793032987,
+      "IMG_2421": 1.310947111281731,
+      "IMG_2420": 1.2152465591990749,
+      "IMG_2417": 1.2191838857073676
+    },
+    "decimal_examples": {
+      "IMG_2406": {
+        "low": 0.006549806034703352,
+        "high": 0.007696970593018614
+      },
+      "IMG_2405": {
+        "low": 0.003502607555404297,
+        "high": 0.0035873460077414333
+      }
+    }
+  },
+  "batch_clone": {
+    "images": 18,
+    "worker_transport_clone_errors": 0
+  },
+  "frozen64": {
+    "checked": 64,
+    "new_rejects": 0,
+    "noise_fixed_contract": true
+  },
+  "historical27": {
+    "checked": 27,
+    "new_rejects": 0,
+    "new_accepts": 1,
+    "new_accept_file": "field_r5_1927/r5_blue_compact.jpeg"
+  },
+  "known_baseline_test_debt": [
+    "test_trace_sampling_consensus.js already fails in RC1 work baseline",
+    "test_corpus_hygiene.js already fails in RC1 work baseline"
+  ],
+  "final_candidate_gates": {
+    "positional_0_005": "PASS",
+    "low_population_guard": "PASS",
+    "high_population_guard": "PASS",
+    "distinct_population_consensus": "PASS",
+    "accepted_sample_x_guard": "PASS",
+    "accepted_sample_y_guard": "PASS",
+    "affine_trace_envelope": "PASS",
+    "iphone_state_zero_copy": "PASS",
+    "axis_intersection_fallback": "PASS",
+    "compact_multiformat": "PASS",
+    "compact_empirical_axis": "PASS",
+    "runtime_manifest_bundle": "PASS_24_modules",
+    "source_to_pwa_distribution": "PASS_8_files",
+    "pwa_bundle_parity_wrapper_reject": "PASS",
+    "batch_clone_18": "PASS_0_clone_errors"
+  },
+  "baseline_test_debt_confirmed_in_rc1": [
+    "test_trace_sampling_consensus.js",
+    "test_corpus_hygiene.js",
+    "test_trace_population_identity.js",
+    "test_joint_trace_identity.js",
+    "test_trace_confidence_diagnostic.js",
+    "test_accepted_sample_evidence.js",
+    "test_field_iphone_geometry_regression.js",
+    "test_v207_decimal_axis_guard.js",
+    "test_v207_r2_latest_field.js",
+    "test_v207_r3_latest_field.js"
+  ],
+  "package_status": "NOT_PACKAGED_pending_iPhone_real_device_validation"
+}
