@@ -1,9 +1,0 @@
-{
-  "name":"Energy Graph Simple v2",
-  "short_name":"EGS v2",
-  "start_url":"./",
-  "display":"standalone",
-  "background_color":"#080a0d",
-  "theme_color":"#0b0d10",
-  "description":"Offline Energy per Band Low/High measurement using the v2 safe analysis pipeline."
-}
