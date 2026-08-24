@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="app.css?v=2.0.7-r25-RC2-dev2">
+<title>Energy Graph Simple v2.0.7-r25-RC2-dev2</title>
+</head>
+<body>
+<main class="app">
+  <header>
+    <div>
+      <h1>Energy Graph Simple <span id="appVersion">v2.0.7-r25-RC2-dev2</span></h1>
+      <p>Capture only the black <strong>Energy per Band</strong> graph.</p>
+    </div>
+    <div class="badge" id="buildBadge">v2.0.7-r25-RC2-dev2 · safe pipeline</div>
+  </header>
+
+  <section class="capture-card">
+    <div class="actions">
+      <label class="primary" for="cameraInput">Take Photo</label>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+      <label class="secondary" for="fileInput">Choose Photo</label>
+      <input id="fileInput" type="file" accept="image/*" hidden>
+      <label class="secondary" for="batchInput">Batch Analyze</label>
+      <input id="batchInput" type="file" accept="image/*" multiple hidden>
+    </div>
+    <p class="hint">X-axis: 0–500 · Low: 0–260 · High: 270–500</p>
+  </section>
+
+  <section id="batchCard" class="batch-card hidden">
+    <div class="batch-head">
+      <div><strong>Batch analysis</strong><p id="batchSummary">No batch loaded</p></div>
+      <button id="exportSelected" class="export-button" type="button" disabled>Export selected evidence ZIP</button>
+    </div>
+    <div class="batch-tools">
+      <button id="selectSuspect" type="button">Select suspected</button>
+      <button id="selectRejected" type="button">Select rejected</button>
+      <button id="selectAllBatch" type="button">Select all</button>
+      <button id="clearBatchSelection" type="button">Clear</button>
+    </div>
+    <div id="batchList" class="batch-list"></div>
+  </section>
+
+  <section id="progressCard" class="status-card hidden" aria-live="polite">
+    <div class="spinner"></div>
+    <div><strong>Analyzing image…</strong><p id="progressText">Preparing image</p></div>
+  </section>
+
+  <section id="previewCard" class="preview-card hidden">
+    <div class="preview-wrap">
+      <img id="previewImage" alt="Captured Energy per Band graph">
+      <canvas id="overlayCanvas"></canvas>
+    </div>
+  </section>
+
+  <section id="resultCard" class="result-card hidden" tabindex="-1" aria-live="polite">
+    <div id="resultState" class="result-state"></div>
+    <div id="values" class="values hidden">
+      <div><span>Low average</span><strong id="lowValue">—</strong><small>0–260</small></div>
+      <div><span>High average</span><strong id="highValue">—</strong><small>270–500</small></div>
+    </div>
+    <div id="confidenceCard" class="confidence-card hidden">
+      <div class="confidence-head"><span>Trace confidence</span><strong id="confidenceValue">—</strong></div>
+      <div class="confidence-bar"><i id="confidenceBar"></i></div>
+      <div id="confidenceParts" class="confidence-parts"></div>
+      <small>Diagnostic only — it never changes the reported Low/High values.</small>
+    </div>
+    <div id="attention" class="attention hidden">
+      <strong>Needs attention</strong>
+      <p id="attentionReason"></p>
+      <p class="attention-note">No value was reported because the safe validation gates did not agree.</p>
+    </div>
+    <details id="diagnostics">
+      <summary>Analysis details</summary>
+      <pre id="diagText"></pre>
+    </details>
+  </section>
+</main>
+<script src="egs-v2-core.bundle.js?v=2.0.7-r25-RC2-dev2"></script>
+<script src="app.js?v=2.0.7-r25-RC2-dev2"></script>
+</body>
+</html>
