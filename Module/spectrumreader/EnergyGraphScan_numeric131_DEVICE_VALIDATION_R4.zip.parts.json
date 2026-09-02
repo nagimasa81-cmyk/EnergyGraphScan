@@ -1,0 +1,24 @@
+{
+  "format": "egs-pages-split-v1",
+  "schema_version": 1,
+  "archive": "EnergyGraphScan_numeric131_DEVICE_VALIDATION_R4.zip",
+  "archive_sha256": "d876529acd46661b4b612f7af539fefaba852bb23cebe3897e167e29c835d08e",
+  "archive_size_bytes": 48957755,
+  "parts": [
+    {
+      "name": "EnergyGraphScan_numeric131_DEVICE_VALIDATION_R4.zip.part001",
+      "size": 18874368,
+      "sha256": "9232e9c5318440974ce40eb07e71cb75b43f7292bb7f416fc154778958fb0758"
+    },
+    {
+      "name": "EnergyGraphScan_numeric131_DEVICE_VALIDATION_R4.zip.part002",
+      "size": 18874368,
+      "sha256": "8536afee926684d0ae348c58dc5e5323fc910116e693aa3ef637e3d03bc553f4"
+    },
+    {
+      "name": "EnergyGraphScan_numeric131_DEVICE_VALIDATION_R4.zip.part003",
+      "size": 11209019,
+      "sha256": "cc534cb4132c1304450316afdebe879e1db68c323e079acf655386313102036a"
+    }
+  ]
+}
