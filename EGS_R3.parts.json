@@ -1,0 +1,40 @@
+{
+  "format": "binary_split_v1",
+  "original_name": "EGS_numeric131_DEVICE_VALIDATION_CANDIDATE_R3_20260901.zip",
+  "original_size_bytes": 98472565,
+  "original_sha256": "11f49f5c6e5d6fbaf392e9ecd9f1742f5201404a0ce18820662409e2ea4d493d",
+  "part_size_target_bytes": 18874368,
+  "part_count": 6,
+  "parts": [
+    {
+      "name": "EGS_R3.zip.part000",
+      "size_bytes": 18874368,
+      "sha256": "a83a878185bfec0b0c9e44bab430c752972f57294e7e89a0726727117cfed542"
+    },
+    {
+      "name": "EGS_R3.zip.part001",
+      "size_bytes": 18874368,
+      "sha256": "4a1739efb84437dc8acf493516033ea4f6f2b7d6667d8f6ba5606d35998e3446"
+    },
+    {
+      "name": "EGS_R3.zip.part002",
+      "size_bytes": 18874368,
+      "sha256": "f72de8443429197e2ab48de92c3e2d1aa703a5dfca0fffdb8d0c58f1f52c371f"
+    },
+    {
+      "name": "EGS_R3.zip.part003",
+      "size_bytes": 18874368,
+      "sha256": "44ec8959867aa3aff9f36e1215e7025cbec27b24d1cbdb43196fd2180f4124a7"
+    },
+    {
+      "name": "EGS_R3.zip.part004",
+      "size_bytes": 18874368,
+      "sha256": "44bad7903572d67d821f80d0d278e6aa743cd65b2f16a3afe1b9724a7c586d0c"
+    },
+    {
+      "name": "EGS_R3.zip.part005",
+      "size_bytes": 4100725,
+      "sha256": "ccffd81898b74f256fad69abf2a2f40f1cf8d8bd2aef31ceaaa01423af8421d7"
+    }
+  ]
+}
